@@ -24,6 +24,11 @@ static bool cleanBuild;
 /* Use this to prevent printing return keywords and newlines in lambdas. */
 static bool inLambda = false;
 
+/* Use this to prevent printing the lambda and
+ * to print directrly the iterable in the list comprehensioninstead of a argument of lambda function */
+static bool inComprehension = false;
+static PycRef<ASTNode> comprehension_iterable;
+
 /* Use this to keep track of whether we need to print out any docstring and
  * the list of global variables that we are using (such as inside a function). */
 static bool printDocstringAndGlobals = false;
@@ -91,6 +96,7 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
     int unpack = 0;
     bool else_pop = false;
     bool variable_annotations = false;
+    bool isMakeFunctionAComprehensionLambda = false;
 
     while (!source.atEof()) {
 #if defined(BLOCK_DEBUG) || defined(STACK_DEBUG)
@@ -244,7 +250,7 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
             {
                 PycRef<ASTNode> fun_code = stack.top();
                 stack.pop();
-                stack.push(new ASTFunction(fun_code, {}, {}));
+                stack.push(new ASTFunction(fun_code, {}, {}, false));
             }
             break;
         case Pyc::BUILD_LIST_A:
@@ -436,6 +442,11 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                 int pparams = (operand & 0xFF);
                 ASTCall::kwparam_t kwparamList;
                 ASTCall::pparam_t pparamList;
+
+                if (isMakeFunctionAComprehensionLambda) {
+                    pparams = 1; // in version 3.11 pparams is 0, don't know exactly why, but its essential.
+                    isMakeFunctionAComprehensionLambda = false;
+                }
 
                 /* Test for the load build class function */
                 stack_hist.push(stack);
@@ -1048,10 +1059,22 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
         case Pyc::POP_JUMP_IF_TRUE_A:
         case Pyc::POP_JUMP_FORWARD_IF_FALSE_A:
         case Pyc::POP_JUMP_FORWARD_IF_TRUE_A:
+        case Pyc::POP_JUMP_FORWARD_IF_NONE_A:
+        case Pyc::POP_JUMP_FORWARD_IF_NOT_NONE_A:
         case Pyc::INSTRUMENTED_POP_JUMP_IF_FALSE_A:
         case Pyc::INSTRUMENTED_POP_JUMP_IF_TRUE_A:
         case Pyc::JUMP_IF_NOT_EXC_MATCH_A:
             {
+                // if POP_JUMP_FORWARD_IF_NONE_A or ...NOT_NONE - 
+                // then first push to the stack the ASTCompare to simulate like a IS_OP with a None were existed before this opcode
+                if (opcode == Pyc::POP_JUMP_FORWARD_IF_NONE_A
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_NOT_NONE_A) {
+                    PycRef<ASTNode> left = stack.top();
+                    stack.pop();
+                    stack.push(new ASTCompare(left, nullptr, (opcode == Pyc::POP_JUMP_FORWARD_IF_NOT_NONE_A
+                        ? ASTCompare::CMP_IS : ASTCompare::CMP_IS_NOT)));
+                }
+                
                 PycRef<ASTNode> cond = stack.top();
                 PycRef<ASTCondBlock> ifblk;
                 int popped = ASTCondBlock::UNINITED;
@@ -1073,6 +1096,8 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                         || opcode == Pyc::POP_JUMP_IF_TRUE_A
                         || opcode == Pyc::POP_JUMP_FORWARD_IF_FALSE_A
                         || opcode == Pyc::POP_JUMP_FORWARD_IF_TRUE_A
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_NONE_A
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_NOT_NONE_A
                         || opcode == Pyc::INSTRUMENTED_POP_JUMP_IF_FALSE_A
                         || opcode == Pyc::INSTRUMENTED_POP_JUMP_IF_TRUE_A) {
                     /* Pop condition before the jump */
@@ -1104,7 +1129,9 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                         || opcode == Pyc::JUMP_IF_FALSE_A
                         || opcode == Pyc::JUMP_IF_TRUE_A
                         || opcode == Pyc::POP_JUMP_FORWARD_IF_TRUE_A
-                        || opcode == Pyc::POP_JUMP_FORWARD_IF_FALSE_A) {
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_FALSE_A
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_NONE_A
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_NOT_NONE_A) {
                     /* Offset is relative in these cases */
                     offs += pos;
                 }
@@ -1185,10 +1212,13 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
             }
             break;
         case Pyc::JUMP_ABSOLUTE_A:
+        case Pyc::JUMP_BACKWARD_A:
             {
                 int offs = operand;
                 if (mod->verCompare(3, 10) >= 0)
                     offs *= sizeof(uint16_t); // // BPO-27129
+                if (opcode == Pyc::JUMP_BACKWARD_A)
+                    offs = pos - offs;
 
                 if (offs < pos) {
                     if (curblock->blktype() == ASTBlock::BLK_FOR) {
@@ -1595,7 +1625,14 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                     kwDefArgs.push_front(stack.top());
                     stack.pop();
                 }
-                stack.push(new ASTFunction(fun_code, defArgs, kwDefArgs));
+                
+                // checking if this function is a lambda of list comprehension
+                PycRef<PycCode> func_code_ref = fun_code.cast<ASTObject>()->object().cast<PycCode>();
+                bool isCompLambda = strcmp(func_code_ref->name()->value(), "<listcomp>") == 0;
+                if (isCompLambda)
+                    isMakeFunctionAComprehensionLambda = true;
+
+                stack.push(new ASTFunction(fun_code, defArgs, kwDefArgs, isCompLambda));
             }
             break;
         case Pyc::NOP:
@@ -2536,6 +2573,7 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
         case Pyc::PRECALL_A:
         case Pyc::RESUME_A:
         case Pyc::INSTRUMENTED_RESUME_A:
+        case Pyc::RETURN_GENERATOR:
             /* We just entirely ignore this / no-op */
             break;
         case Pyc::CACHE:
@@ -2792,7 +2830,15 @@ void print_src(PycRef<ASTNode> node, PycModule* mod, std::ostream& pyc_output)
     case ASTNode::NODE_CALL:
         {
             PycRef<ASTCall> call = node.cast<ASTCall>();
+            bool isCompLambda = call->func().type() == ASTNode::NODE_FUNCTION && call->func().cast<ASTFunction>()->isCompLambda();
+            if (isCompLambda) {
+                inComprehension = true;
+                comprehension_iterable = *call->pparams().begin();
+            }
             print_src(call->func(), mod, pyc_output);
+            if (isCompLambda)
+                break; // doesn't need to print parenthesis and arguments of lambda, in comprehension
+
             pyc_output << "(";
             bool first = true;
             for (const auto& param : call->pparams()) {
@@ -2975,7 +3021,13 @@ void print_src(PycRef<ASTNode> node, PycModule* mod, std::ostream& pyc_output)
         }
         break;
     case ASTNode::NODE_NAME:
-        pyc_output << node.cast<ASTName>()->name()->value();
+        if (inComprehension && strcmp(node.cast<ASTName>()->name()->value(), ".0") == 0) {
+            inComprehension = false;
+            print_src(comprehension_iterable, mod, pyc_output);
+        }
+        else {
+            pyc_output << node.cast<ASTName>()->name()->value();
+        }
         break;
     case ASTNode::NODE_NODELIST:
         {
@@ -3165,41 +3217,45 @@ void print_src(PycRef<ASTNode> node, PycModule* mod, std::ostream& pyc_output)
     case ASTNode::NODE_FUNCTION:
         {
             /* Actual named functions are NODE_STORE with a name */
-            pyc_output << "(lambda ";
             PycRef<ASTNode> code = node.cast<ASTFunction>()->code();
-            PycRef<PycCode> code_src = code.cast<ASTObject>()->object().cast<PycCode>();
-            ASTFunction::defarg_t defargs = node.cast<ASTFunction>()->defargs();
-            ASTFunction::defarg_t kwdefargs = node.cast<ASTFunction>()->kwdefargs();
-            auto da = defargs.cbegin();
-            int narg = 0;
-            for (int i=0; i<code_src->argCount(); i++) {
-                if (narg)
-                    pyc_output << ", ";
-                pyc_output << code_src->getLocal(narg++)->value();
-                if ((code_src->argCount() - i) <= (int)defargs.size()) {
-                    pyc_output << " = ";
-                    print_src(*da++, mod, pyc_output);
-                }
-            }
-            da = kwdefargs.cbegin();
-            if (code_src->kwOnlyArgCount() != 0) {
-                pyc_output << (narg == 0 ? "*" : ", *");
+            if (!inComprehension) {
+                pyc_output << "(lambda ";
+                PycRef<PycCode> code_src = code.cast<ASTObject>()->object().cast<PycCode>();
+                ASTFunction::defarg_t defargs = node.cast<ASTFunction>()->defargs();
+                ASTFunction::defarg_t kwdefargs = node.cast<ASTFunction>()->kwdefargs();
+                auto da = defargs.cbegin();
+                int narg = 0;
                 for (int i = 0; i < code_src->argCount(); i++) {
-                    pyc_output << ", ";
+                    if (narg)
+                        pyc_output << ", ";
                     pyc_output << code_src->getLocal(narg++)->value();
-                    if ((code_src->kwOnlyArgCount() - i) <= (int)kwdefargs.size()) {
+                    if ((code_src->argCount() - i) <= (int)defargs.size()) {
                         pyc_output << " = ";
                         print_src(*da++, mod, pyc_output);
                     }
                 }
+                da = kwdefargs.cbegin();
+                if (code_src->kwOnlyArgCount() != 0) {
+                    pyc_output << (narg == 0 ? "*" : ", *");
+                    for (int i = 0; i < code_src->argCount(); i++) {
+                        pyc_output << ", ";
+                        pyc_output << code_src->getLocal(narg++)->value();
+                        if ((code_src->kwOnlyArgCount() - i) <= (int)kwdefargs.size()) {
+                            pyc_output << " = ";
+                            print_src(*da++, mod, pyc_output);
+                        }
+                    }
+                }
+                pyc_output << ": ";
             }
-            pyc_output << ": ";
 
+            bool previousInComprehension = inComprehension;
             inLambda = true;
             print_src(code, mod, pyc_output);
             inLambda = false;
 
-            pyc_output << ")";
+            if (!previousInComprehension)
+                pyc_output << ")";
         }
         break;
     case ASTNode::NODE_STORE:
@@ -3497,13 +3553,18 @@ void decompyle(PycRef<PycCode> code, PycModule* mod, std::ostream& pyc_output)
                     clean->removeFirst();
             }
         }
-        if (clean->nodes().back().type() == ASTNode::NODE_RETURN) {
+        bool redundantReturnOccured = true;
+        while (clean->nodes().back().type() == ASTNode::NODE_RETURN && redundantReturnOccured) {
             PycRef<ASTReturn> ret = clean->nodes().back().cast<ASTReturn>();
 
             PycRef<ASTObject> retObj = ret->value().try_cast<ASTObject>();
             if (ret->value() == NULL || ret->value().type() == ASTNode::NODE_LOCALS ||
                     (retObj && retObj->object().type() == PycObject::TYPE_NONE)) {
                 clean->removeLast();  // Always an extraneous return statement
+                redundantReturnOccured = true;
+            }
+            else {
+                redundantReturnOccured = false;
             }
         }
     }

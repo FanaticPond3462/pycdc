@@ -249,18 +249,21 @@ class ASTFunction : public ASTNode {
 public:
     typedef std::list<PycRef<ASTNode>> defarg_t;
 
-    ASTFunction(PycRef<ASTNode> code, defarg_t defArgs, defarg_t kwDefArgs)
+    ASTFunction(PycRef<ASTNode> code, defarg_t defArgs, defarg_t kwDefArgs, bool isCompLambda)
         : ASTNode(NODE_FUNCTION), m_code(std::move(code)),
-          m_defargs(std::move(defArgs)), m_kwdefargs(std::move(kwDefArgs)) { }
+          m_defargs(std::move(defArgs)), m_kwdefargs(std::move(kwDefArgs)),
+          m_isCompLambda(isCompLambda) { }
 
     PycRef<ASTNode> code() const { return m_code; }
     const defarg_t& defargs() const { return m_defargs; }
     const defarg_t& kwdefargs() const { return m_kwdefargs; }
+    const bool& isCompLambda() const { return m_isCompLambda; }
 
 private:
     PycRef<ASTNode> m_code;
     defarg_t m_defargs;
     defarg_t m_kwdefargs;
+    bool m_isCompLambda;
 };
 
 

@@ -13,10 +13,10 @@ def generate_ints(n):
         yield i * 2
 
 for i in generate_ints(5):
-    print i,
-print
+    print(i,'')
+print()
 gen = generate_ints(3)
-print gen.next(),
-print gen.next(),
-print gen.next(),
-print gen.next()
+print(gen.next(),'')
+print(gen.next(),'')
+print(gen.next(),'')
+print(gen.next(),'')

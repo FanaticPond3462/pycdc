@@ -23,8 +23,11 @@ yield i * 2 <EOL>
 <OUTDENT>
 for i in generate_ints ( 5 ) : <EOL>
 <INDENT>
-print i , <EOL>
+print ( i , '' ) <EOL>
 <OUTDENT>
-print <EOL>
+print ( ) <EOL>
 gen = generate_ints ( 3 ) <EOL>
-print gen . next ( ) , gen . next ( ) , gen . next ( ) , gen . next ( ) <EOL>
+print ( gen . next ( ) , '' ) <EOL>
+print ( gen . next ( ) , '' ) <EOL>
+print ( gen . next ( ) , '' ) <EOL>
+print ( gen . next ( ) , '' ) <EOL>

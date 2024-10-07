@@ -16,4 +16,3 @@ if 1 == 1:
 if 1 == 1:
     for a in 'foo':
         print('block2')
-return None

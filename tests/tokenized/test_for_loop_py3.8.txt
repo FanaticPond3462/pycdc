@@ -8,6 +8,3 @@ if 1 == 1 : <EOL>
 for a in 'foo' : <EOL>
 <INDENT>
 print ( 'block2' ) <EOL>
-<OUTDENT>
-<OUTDENT>
-return None <EOL>

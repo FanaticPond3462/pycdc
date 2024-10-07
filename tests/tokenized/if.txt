@@ -1,0 +1,34 @@
+def test ( msgtype , flags ) : <EOL>
+<INDENT>
+if flags == 1 : <EOL>
+<INDENT>
+msgtype = 1 <EOL>
+<OUTDENT>
+elif flags == 2 : <EOL>
+<INDENT>
+msgtype = 2 <EOL>
+<OUTDENT>
+elif flags == 3 : <EOL>
+<INDENT>
+msgtype = 3 <EOL>
+<OUTDENT>
+return msgtype <EOL>
+<OUTDENT>
+def test2 ( ) : <EOL>
+<INDENT>
+item = None <EOL>
+if item is None : <EOL>
+<INDENT>
+item = 'item is none' <EOL>
+<OUTDENT>
+if item is not None : <EOL>
+<INDENT>
+item = 'item is not none' <EOL>
+<OUTDENT>
+if item == 1 : <EOL>
+<INDENT>
+item = 'item equals 1' <EOL>
+<OUTDENT>
+if not ( item == 1 or item == 2 ) : <EOL>
+<INDENT>
+item = 'item not equals 1 or 2' <EOL>
