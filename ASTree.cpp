@@ -113,7 +113,7 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
 #endif
 
         curpos = pos;
-        bc_next(source, code, mod, opcode, operand, pos, is_disasm);
+        bc_next(source, mod, opcode, operand, pos);
 
         if (mod->verCompare(3, 9) >= 0
             && opcode == Pyc::JUMP_FORWARD_A
@@ -1288,7 +1288,7 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                     if (cont->hasExcept()) {
                         stack_hist.push(stack);
                         curblock->setEnd(pos+operand);
-                        PycRef<ASTBlock> except = new ASTCondBlock(ASTBlock::BLK_EXCEPT, pos+operand, Node_NULL, false);
+                        PycRef<ASTBlock> except = new ASTCondBlock(ASTBlock::BLK_EXCEPT, pos+operand, NULL, false);
                         except->init();
                         blocks.push(except);
                         curblock = blocks.top();
@@ -1919,7 +1919,7 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                         curblock->append(prev.cast<ASTNode>());
                     }
 
-                    bc_next(source, code, mod, opcode, operand, pos, is_disasm);
+                    bc_next(source, mod, opcode, operand, pos);
                 }
             }
             break;
@@ -2685,7 +2685,7 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                       || (curblock->blktype() == ASTBlock::BLK_ELIF) )
                  && (curblock->end() == pos);
     }
-
+    }
     if (stack_hist.size()) {
         fputs("Warning: Stack history is not empty!\n", stderr);
 
@@ -2708,10 +2708,7 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
     cleanBuild = true;
     return new ASTNodeList(defblock->nodes());
 }
-
-static void append_to_chain_store(const PycRef<ASTNode> &chainStore,
-        PycRef<ASTNode> item, FastStack& stack, const PycRef<ASTBlock>& curblock)
-{
+void append_to_chain_store(const PycRef<ASTNode> &chainStore, PycRef<ASTNode> item, FastStack& stack, const PycRef<ASTBlock>& curblock){
     stack.pop();    // ignore identical source object.
     chainStore.cast<ASTChainStore>()->append(item);
     if (stack.top().type() == PycObject::TYPE_NULL) {
@@ -2841,7 +2838,7 @@ static void print_block(PycRef<ASTBlock> blk, PycModule* mod,
         }
 
         if ((*ln).cast<ASTNode>()->type() != ASTNode::NODE_NODELIST) {
-            start_line(cur_indent);
+            start_line(cur_indent, pyc_output);
         }
         print_src(*ln, mod, pyc_output);
         if (++ln != lines.end()) {
@@ -3107,9 +3104,9 @@ void print_src(PycRef<ASTNode> node, PycModule* mod, std::ostream& pyc_output)
             cur_indent++;
             ASTNodeList::list_t lines = node.cast<ASTNodeList>()->nodes();
             for (ASTNodeList::list_t::const_iterator ln = lines.begin(); ln != lines.end(); ++ln) {
-                start_line(cur_indent);
-                print_src(*ln, mod);
-                end_line();
+                start_line(cur_indent, pyc_output);;
+                print_src(*ln, mod, pyc_output);
+                end_line(pyc_output);
             }
             cur_indent--;
         }

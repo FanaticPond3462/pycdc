@@ -6,3 +6,9 @@
 /.kdev4
 __pycache__
 tests-out
+/CMakeFiles/*
+CMakeCache.txt
+Makefile
+pycdas
+libpycxx.a
+cmake_install.cmake
