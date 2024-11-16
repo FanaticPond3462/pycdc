@@ -12,3 +12,5 @@ Makefile
 pycdas
 libpycxx.a
 cmake_install.cmake
+/.vs/*
+/out/*

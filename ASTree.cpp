@@ -1251,35 +1251,39 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                                 curblock->append(tmp.cast<ASTNode>());
                             }
                         }
-                    } else if (curblock->blktype() == ASTBlock::BLK_ELSE) {
+                    }
+                    else if (curblock->blktype() == ASTBlock::BLK_ELSE) {
                         stack = stack_hist.top();
                         stack_hist.pop();
 
-                    if (curblock->blktype() == ASTBlock::BLK_CONTAINER ||
-                        curblock->blktype() == ASTBlock::BLK_EXCEPT) {
-                        ; //pass
-                    } else {
-                        if (curblock->blktype() == ASTBlock::BLK_ELSE) {
-                            stack = stack_hist.top();
-                            stack_hist.pop();
+                        if (curblock->blktype() == ASTBlock::BLK_CONTAINER ||
+                            curblock->blktype() == ASTBlock::BLK_EXCEPT) {
 
-                            blocks.pop();
-                            blocks.top()->append(curblock.cast<ASTNode>());
-                            curblock = blocks.top();
+                        }
+                        else {
+                            if (curblock->blktype() == ASTBlock::BLK_ELSE) {
+                                stack = stack_hist.top();
+                                stack_hist.pop();
 
-                            if (curblock->blktype() == ASTBlock::BLK_CONTAINER
-                                    && !curblock.cast<ASTContainerBlock>()->hasFinally()) {
                                 blocks.pop();
                                 blocks.top()->append(curblock.cast<ASTNode>());
                                 curblock = blocks.top();
-                            }
-                        } else {
-                            curblock->append(new ASTKeyword(ASTKeyword::KW_CONTINUE));
-                        }
 
-                        /* We're in a loop, this jumps back to the start */
-                        /* I think we'll just ignore this case... */
-                        break; // Bad idea? Probably!
+                                if (curblock->blktype() == ASTBlock::BLK_CONTAINER
+                                    && !curblock.cast<ASTContainerBlock>()->hasFinally()) {
+                                    blocks.pop();
+                                    blocks.top()->append(curblock.cast<ASTNode>());
+                                    curblock = blocks.top();
+                                }
+                            }
+                            else {
+                                curblock->append(new ASTKeyword(ASTKeyword::KW_CONTINUE));
+                            }
+
+                            /* We're in a loop, this jumps back to the start */
+                            /* I think we'll just ignore this case... */
+                            break; // Bad idea? Probably!
+                        }
                     }
                 }
 
@@ -2684,7 +2688,6 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                       || (curblock->blktype() == ASTBlock::BLK_IF)
                       || (curblock->blktype() == ASTBlock::BLK_ELIF) )
                  && (curblock->end() == pos);
-    }
     }
     if (stack_hist.size()) {
         fputs("Warning: Stack history is not empty!\n", stderr);
